@@ -1,0 +1,64 @@
+name: Build SleepGate 1.40
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download Apktool
+        run: |
+          curl -L --fail -o apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar
+
+      - name: Decode 1.39
+        run: java -jar apktool.jar d SleepGate-1.39.apk -o decoded -f
+
+      - name: Patch Google OAuth WebView
+        run: python3 patch.py
+
+      - name: Set version 1.40 / 40
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('decoded/apktool.yml')
+          s=p.read_text()
+          s=s.replace('versionName: 1.39', 'versionName: 1.40')
+          s=s.replace('versionCode: 39', 'versionCode: 40')
+          p.write_text(s)
+          PY
+
+      - name: Build unsigned APK
+        run: java -jar apktool.jar b decoded -o SleepGate-1.40-unsigned.apk
+
+      - name: Install Android build tools
+        uses: android-actions/setup-android@v3
+
+      - name: Sign APK
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner -type f | sort -V | tail -1)
+          ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name zipalign -type f | sort -V | tail -1)
+          keytool -genkeypair -v -keystore sleepgate-release.jks -storepass sleepgate123 -keypass sleepgate123 \
+            -alias sleepgate -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname 'CN=SleepGate, OU=App, O=SleepGate, L=Unknown, ST=Unknown, C=US'
+          "$ZIPALIGN" -f 4 SleepGate-1.40-unsigned.apk SleepGate-1.40-aligned.apk
+          "$SDKMANAGER" sign --ks sleepgate-release.jks --ks-pass pass:sleepgate123 --key-pass pass:sleepgate123 \
+            --out SleepGate-1.40.apk SleepGate-1.40-aligned.apk
+          "$SDKMANAGER" verify --verbose SleepGate-1.40.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SleepGate-1.40
+          path: SleepGate-1.40.apk
