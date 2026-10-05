@@ -1,6 +1,6 @@
 name: Build SleepGate 1.40
 
-on:
+"on":
   workflow_dispatch:
 
 jobs:
